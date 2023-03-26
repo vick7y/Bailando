@@ -3,3 +3,4 @@ essentia
 chumpy
 matplotlib
 easydict
+numba

@@ -17,6 +17,7 @@ from .keypoint2img import read_keypoints
 from multiprocessing import Pool
 from functools import partial
 from tqdm import tqdm
+from json.decoder import JSONDecodeError
 import pickle
 import cv2
 
@@ -143,7 +144,7 @@ def img2video(expdir, epoch, audio_path=None):
             music_name = name[-9:-5] + '.wav'
         else:
             music_name = name + '.mp3'
-            audio_dir = 'extra/'
+            audio_dir = audio_path
             music_names = sorted(os.listdir(audio_dir))
         
         if music_name in music_names:
@@ -490,7 +491,10 @@ def visualizeAndWrite(results,config,expdir,dance_names, epoch, quants=None):
     pose_code2pkl(quants, dance_names, config.testing, expdir, epoch)
     write2json(np_dances, dance_names,config.testing, expdir,epoch)
     visualize(config.testing, dance_names, expdir,epoch, quants)
-    img2video(expdir,epoch)
+    if hasattr(config, 'demo') and config.demo:
+        img2video(expdir, epoch, audio_path = config.audio_path)
+    else:
+        img2video(expdir,epoch)
 
     json_dir = os.path.join(expdir, "jsons",f"ep{epoch:06d}")
     img_dir = os.path.join(expdir, "imgs",f"ep{epoch:06d}")
@@ -509,7 +513,10 @@ def load_data(data_dir, interval=900, data_type='2D'):
     for fname in fnames:
         path = os.path.join(data_dir, fname)
         with open(path) as f:
-            sample_dict = json.loads(f.read())
+            try:
+                sample_dict = json.loads(f.read())
+            except JSONDecodeError:
+                print(path)
             np_music = np.array(sample_dict['music_array'])
             np_dance = np.array(sample_dict['dance_array'])
             if data_type == '2D':
@@ -548,14 +555,21 @@ def load_data_aist(data_dir, interval=120, move=40, rotmat=False, external_wav=N
         path = os.path.join(data_dir, fname)
         with open(path) as f:
             # print(path)
-            sample_dict = json.loads(f.read())
+            # make sure bad data doesn't crash the pipeline
+            try:
+                sample_dict = json.loads(f.read())
+            except JSONDecodeError:
+                print(path)
             np_music = np.array(sample_dict['music_array'])
 
             if external_wav is not None:
                 wav_path = os.path.join(external_wav, fname.split('_')[-2] + '.json')
                 # print('load from external wav!')
                 with open(wav_path) as ff:
-                    sample_dict_wav = json.loads(ff.read())
+                    try:
+                        sample_dict_wav = json.loads(ff.read())
+                    except JSONDecodeError:
+                        print(wav_path)
                     np_music = np.array(sample_dict_wav['music_array']).astype(np.float32)
                     
             
@@ -645,7 +659,10 @@ def load_test_data(data_dir, data_type='2D'):
     for fname in fnames:
         path = os.path.join(data_dir, fname)
         with open(path) as f:
-            sample_dict = json.loads(f.read())
+            try:
+                sample_dict = json.loads(f.read())
+            except JSONDecodeError:
+                print(path)
             np_music = np.array(sample_dict['music_array'])
             np_dance = np.array(sample_dict['dance_array'])
             if data_type == '2D':
@@ -676,13 +693,19 @@ def load_test_data_aist(data_dir, rotmat, move, external_wav=None, external_wav_
         path = os.path.join(data_dir, fname)
         with open(path) as f:
             #print(path)
-            sample_dict = json.loads(f.read())
+            try:
+                sample_dict = json.loads(f.read())
+            except JSONDecodeError:
+                print(path)
             np_music = np.array(sample_dict['music_array'])
             if external_wav is not None:
                 # print('load from external wav!')
                 wav_path = os.path.join(external_wav, fname.split('_')[-2] + '.json')
                 with open(wav_path) as ff:
-                    sample_dict_wav = json.loads(ff.read())
+                    try:
+                        sample_dict_wav = json.loads(ff.read())
+                    except JSONDecodeError:
+                        print(wav_path)   
                     np_music = np.array(sample_dict_wav['music_array'])
             
             if 'dance_array' in sample_dict:
@@ -720,7 +743,10 @@ def load_test_data_aist(data_dir, rotmat, move, external_wav=None, external_wav_
     # if music_normalize:
     if False:
         with open('/mnt/lustressd/lisiyao1/dance_experiements/music_norm.json') as fff:
-            sample_dict = json.loads(fff.read())
+            try:
+                sample_dict = json.loads(fff.read())
+            except JSONDecodeError:
+                print('/mnt/lustressd/lisiyao1/dance_experiements/music_norm.json')
             music_mean = np.array(sample_dict['music_mean'])
             music_std = np.array(sample_dict['music_std'])
         music_std[(np.abs(music_mean) < 1e-5) & (np.abs(music_std) < 1e-5)] = 1
@@ -739,7 +765,10 @@ def load_json_data(data_file, max_seq_len=150):
     count = 0
     total_count = 0
     with open(data_file) as f:
-        data_list = json.loads(f.read())
+        try:
+            data_list = json.loads(f.read())
+        except JSONDecodeError:
+            print(data_file)
         for data in data_list:
             # The first and last segment may be unusable
             music_segs = data['music_segments']
@@ -796,7 +825,10 @@ def check_data_distribution(data_dir, interval=240, rotmat=False):
         path = os.path.join(data_dir, fname)
         with open(path) as f:
             # print(path)
-            sample_dict = json.loads(f.read())
+            try:
+                sample_dict = json.loads(f.read())
+            except JSONDecodeError:
+                print(path)
             np_music = np.array(sample_dict['music_array'])
             np_dance = np.array(sample_dict['dance_array'])
 

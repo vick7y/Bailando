@@ -56,6 +56,8 @@ class AC():
         vqvae = self.model.eval()
         gpt = self.model2.train()
         gpt.module.freeze_drop()
+        min_TDerror = 10000
+        min_actorLoss = 10000
 
         config = self.config
         ddm = []
@@ -244,9 +246,9 @@ class AC():
                     'entropy': entropy.clone().detach().mean()
                 }
                 #if epoch_i % self.config.log_per_updates == 0:
-                log.update(stats)
-                updates += 1
 
+                updates += 1
+            log.update(stats)
             checkpoint = {
                 'model': gpt.state_dict(),
                 'config': config,
@@ -255,87 +257,90 @@ class AC():
 
             # # Save checkpoint
             if epoch_i % config.save_per_epochs == 0 or epoch_i == 1:
-                filename = os.path.join(self.ckptdir, f'epoch_{epoch_i}.pt')
-                torch.save(checkpoint, filename)
+                if stats['TD-error']<min_TDerror or stats['actor_loss']<min_actorLoss:
+                    filename = os.path.join(self.ckptdir, f'epoch_{epoch_i}.pt')
+                    torch.save(checkpoint, filename)
+                    min_TDerror = min(min_TDerror, stats['TD-error'])
+                    min_actorLoss = min(min_actorLoss, stats['actor_loss'])
             # Eval
-            if epoch_i % config.test_freq == 0:
-                with torch.no_grad():
-                    print("Evaluation...")
-                    gpt.eval()
-                    results = []
-                    random_id = 0  # np.random.randint(0, 1e4)
-                    quants_out = {}
-                    for i_eval, batch_eval in enumerate(tqdm(test_loader, desc='Generating Dance Poses')):
-                        
-                        # Prepare data
-                        if hasattr(config, 'demo') and config.demo:
-                            music_seq = batch_eval.to(self.device)
-                            x = (torch.ones(1, 1,).to(self.device).long() * 423, torch.ones(1, 1,).to(self.device).long() * 12)
-                        else:
-                            music_seq, pose_seq = batch_eval
-                            music_seq = music_seq.to(self.device)
-                            pose_seq = pose_seq.to(self.device)
+            # if epoch_i % config.test_freq == 0:
+                    with torch.no_grad():
+                        print("Evaluation...")
+                        gpt.eval()
+                        results = []
+                        random_id = 0  # np.random.randint(0, 1e4)
+                        quants_out = {}
+                        for i_eval, batch_eval in enumerate(tqdm(test_loader, desc='Generating Dance Poses')):
                             
-                            quants = vqvae.module.encode(pose_seq)
-                        # print(pose_seq.size())
-                            if isinstance(quants, tuple):
-                                x = tuple(quants[i][0][:, :1] for i in range(len(quants)))
+                            # Prepare data
+                            if hasattr(config, 'demo') and config.demo:
+                                music_seq = batch_eval.to(self.device)
+                                x = (torch.ones(1, 1,).to(self.device).long() * 423, torch.ones(1, 1,).to(self.device).long() * 12)
                             else:
-                                x = quants[0][:, :1]
-                        # print(x.size())
-                        # print(music_seq.size())
-                        music_ds_rate = config.ds_rate if not hasattr(config, 'external_wav') else config.external_wav_rate
-                        music_seq = music_seq[:, :, :config.structure_generate.n_music//music_ds_rate].contiguous().float()
-                        # print(music_seq.size())
-                        b, t, c = music_seq.size()
-                        music_seq = music_seq.view(b, t//music_ds_rate, c*music_ds_rate)
-                        music_seq = music_seq[:, 1:]
-                        # print(music_seq.size())
+                                music_seq, pose_seq = batch_eval
+                                music_seq = music_seq.to(self.device)
+                                pose_seq = pose_seq.to(self.device)
+                                
+                                quants = vqvae.module.encode(pose_seq)
+                            # print(pose_seq.size())
+                                if isinstance(quants, tuple):
+                                    x = tuple(quants[i][0][:, :1] for i in range(len(quants)))
+                                else:
+                                    x = quants[0][:, :1]
+                            # print(x.size())
+                            # print(music_seq.size())
+                            music_ds_rate = config.ds_rate if not hasattr(config, 'external_wav') else config.external_wav_rate
+                            music_seq = music_seq[:, :, :config.structure_generate.n_music//music_ds_rate].contiguous().float()
+                            # print(music_seq.size())
+                            b, t, c = music_seq.size()
+                            music_seq = music_seq.view(b, t//music_ds_rate, c*music_ds_rate)
+                            music_seq = music_seq[:, 1:]
+                            # print(music_seq.size())
 
-                        # block_size = gpt.module.get_block_size()
+                            # block_size = gpt.module.get_block_size()
 
-                        zs = gpt.module.sample(x, cond=music_seq)
-                        # jj = 0
-                        # for k in range(music_seq.size(1)):
-                        #     x_cond = x if x.size(1) <= block_size else x[:, -block_size:] # crop context if needed
-                        #     music_seq_input = music_seq[:, :k+1] if k < block_size else music_seq[:, k-block_size+1:k+1]
-                        #     # print(x_cond.size())
-                        #     # print(music_seq_input.size())
-                        #     logits, _ = gpt(x_cond, music_seq_input)
-                        #     # jj += 1
-                        #     # pluck the logits at the final step and scale by temperature
-                        #     logits = logits[:, -1, :]
-                        #     # optionally crop probabilities to only the top k options
-                        #     # if top_k is not None:
-                        #     #     logits = top_k_logits(logits, top_k)
-                        #     # apply softmax to convert to probabilities
-                        #     probs = F.softmax(logits, dim=-1)
-                        #     # sample from the distribution or take the most likely
-                        #     # if sample:
-                        #     #     ix = torch.multinomial(probs, num_samples=1)
-                        #     # else:
-                        #     _, ix = torch.topk(probs, k=1, dim=-1)
-                        #     # append to the sequence and continue
-                        #     x = torch.cat((x, ix), dim=1)
+                            zs = gpt.module.sample(x, cond=music_seq)
+                            # jj = 0
+                            # for k in range(music_seq.size(1)):
+                            #     x_cond = x if x.size(1) <= block_size else x[:, -block_size:] # crop context if needed
+                            #     music_seq_input = music_seq[:, :k+1] if k < block_size else music_seq[:, k-block_size+1:k+1]
+                            #     # print(x_cond.size())
+                            #     # print(music_seq_input.size())
+                            #     logits, _ = gpt(x_cond, music_seq_input)
+                            #     # jj += 1
+                            #     # pluck the logits at the final step and scale by temperature
+                            #     logits = logits[:, -1, :]
+                            #     # optionally crop probabilities to only the top k options
+                            #     # if top_k is not None:
+                            #     #     logits = top_k_logits(logits, top_k)
+                            #     # apply softmax to convert to probabilities
+                            #     probs = F.softmax(logits, dim=-1)
+                            #     # sample from the distribution or take the most likely
+                            #     # if sample:
+                            #     #     ix = torch.multinomial(probs, num_samples=1)
+                            #     # else:
+                            #     _, ix = torch.topk(probs, k=1, dim=-1)
+                            #     # append to the sequence and continue
+                            #     x = torch.cat((x, ix), dim=1)
 
-                        # zs = [x]
-                        pose_sample = vqvae.module.decode(zs)
+                            # zs = [x]
+                            pose_sample = vqvae.module.decode(zs)
 
-                        if config.global_vel:
-                            # print('Using predicted global velocity!')
-                            global_vel = pose_sample[:, :, :3].clone()
-                            pose_sample[:, 0, :3] = 0
-                            for iii in range(1, pose_sample.size(1)):
-                                pose_sample[:, iii, :3] = pose_sample[:, iii-1, :3] + global_vel[:, iii-1, :]
+                            if config.global_vel:
+                                # print('Using predicted global velocity!')
+                                global_vel = pose_sample[:, :, :3].clone()
+                                pose_sample[:, 0, :3] = 0
+                                for iii in range(1, pose_sample.size(1)):
+                                    pose_sample[:, iii, :3] = pose_sample[:, iii-1, :3] + global_vel[:, iii-1, :]
 
-                        if isinstance(zs, tuple):
-                            quants_out[self.dance_names[i_eval]] = tuple(zs[ii][0].cpu().data.numpy()[0] for ii in range(len(zs)))
-                        else:
-                            quants_out[self.dance_names[i_eval]] = zs[0].cpu().data.numpy()[0]
-                    
-                        results.append(pose_sample)
+                            if isinstance(zs, tuple):
+                                quants_out[self.dance_names[i_eval]] = tuple(zs[ii][0].cpu().data.numpy()[0] for ii in range(len(zs)))
+                            else:
+                                quants_out[self.dance_names[i_eval]] = zs[0].cpu().data.numpy()[0]
+                        
+                            results.append(pose_sample)
 
-                    visualizeAndWrite(results, config, self.visdir, self.dance_names, epoch_i, quants_out)
+                        visualizeAndWrite(results, config, self.visdir, self.dance_names, epoch_i, quants_out)
                 gpt.train()
                 gpt.module.freeze_drop()
             self.schedular.step()
