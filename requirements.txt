@@ -4,3 +4,4 @@ chumpy
 matplotlib
 easydict
 numba
+scipy==1.5.2

@@ -70,7 +70,7 @@ class MCTall():
 
 
         # Training Loop
-        for epoch_i in range(1, config.epoch + 1):
+        for epoch_i in range(config.start_epoch, config.epoch + 1):
             log.set_progress(epoch_i, len(training_data))
 
             for batch_i, batch in enumerate(training_data):
@@ -140,9 +140,9 @@ class MCTall():
                     'loss': loss.item()
                 }
                 #if epoch_i % self.config.log_per_updates == 0:
-                log.update(stats)
-                updates += 1
 
+                updates += 1
+            log.update(stats)
             checkpoint = {
                 'model': gpt.state_dict(),
                 'config': config,

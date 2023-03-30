@@ -39,6 +39,8 @@ def main():
     if args.train:
         agent.train()
     elif args.eval:
+        # updated config for eval
+        # config.update({'need_not_train_data':True})
         agent.eval()
     elif args.visgt:
         # print('Wula!')

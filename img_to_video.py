@@ -42,10 +42,9 @@ def img2video(expdir, epoch, audio_path=None):
 
 
 if __name__ == '__main__':
-    epoch = 500
-    expdir = "./experiments/sep_vqvae/eval"
-    json_dir = os.path.join(expdir, "jsons",f"ep{epoch:06d}")
+    epoch = 10
+    expdir = "./experiments/actor_critic/eval"
+    # json_dir = os.path.join(expdir, "jsons",f"ep{epoch:06d}")
     img2video(expdir,epoch)
-    if os.path.exists(json_dir):    
-        shutil.rmtree(json_dir)
-        
+    # if os.path.exists(json_dir):    
+    #     shutil.rmtree(json_dir)

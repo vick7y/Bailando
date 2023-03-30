@@ -48,6 +48,7 @@ class MoQ():
         optimizer = self.optimizer
         log = Logger(self.config, self.expdir)
         updates = 0
+        min_loss = 10000
         
         if hasattr(config, 'init_weight') and config.init_weight is not None and config.init_weight is not '':
             print('Use pretrained model!')
@@ -112,54 +113,56 @@ class MoQ():
 
             # # Save checkpoint
             if epoch_i % config.save_per_epochs == 0 or epoch_i == 1:
-                filename = os.path.join(self.ckptdir, f'epoch_{epoch_i}.pt')
-                torch.save(checkpoint, filename)
+                if stats['loss']<min_loss:
+                    filename = os.path.join(self.ckptdir, f'epoch_{epoch_i}.pt')
+                    torch.save(checkpoint, filename)
+                    min_loss = min(min_loss, stats['loss'])
             # Eval
-            if epoch_i % config.test_freq == 0:
-                with torch.no_grad():
-                    print("Evaluation...")
-                    model.eval()
-                    results = []
-                    random_id = 0  # np.random.randint(0, 1e4)
-                    quants = {}
-                    for i_eval, batch_eval in enumerate(tqdm(test_loader, desc='Generating Dance Poses')):
-                        # Prepare data
-                        # pose_seq_eval = map(lambda x: x.to(self.device), batch_eval)
-                        pose_seq_eval = batch_eval.to(self.device)
-                        src_pos_eval = pose_seq_eval[:, :] #
-                        global_shift = src_pos_eval[:, :, :3].clone()
-                        if config.rotmat:
-                            # trans = pose_seq[:, :, :3]
-                            src_pos_eval = src_pos_eval[:, :, 3:]
-                        elif config.global_vel:
-                            src_pos_eval[:, :-1, :3] = src_pos_eval[:, 1:, :3] - src_pos_eval[:, :-1, :3]
-                            src_pos_eval[:, -1, :3] = src_pos_eval[:, -2, :3]
-                        else:
-                            src_pos_eval[:, :, :3] = 0
-
-                        pose_seq_out, loss, _ = model(src_pos_eval)  # first 20 secs
-
-                        if config.rotmat:
-                            pose_seq_out = torch.cat([global_shift, pose_seq_out], dim=2)
-                        if config.global_vel:
-                            global_vel = pose_seq_out[:, :, :3].clone()
-                            pose_seq_out[:, 0, :3] = 0
-                            for iii in range(1, pose_seq_out.size(1)):
-                                pose_seq_out[:, iii, :3] = pose_seq_out[:, iii-1, :3] + global_vel[:, iii-1, :]
-                            # print('Use vel!')
-                            # print(pose_seq_out[:, :, :3])
-                        else:
-                            pose_seq_out[:, :, :3] = global_shift
-                        results.append(pose_seq_out)
-                        if config.structure.use_bottleneck:
-                            quants_pred = model.module.encode(src_pos_eval)
-                            if isinstance(quants_pred, tuple):
-                                quants[self.dance_names[i_eval]] = tuple(quants_pred[ii][0].cpu().data.numpy()[0] for ii in range(len(quants_pred)))
+                if epoch_i % config.test_freq == 0:
+                    with torch.no_grad():
+                        print("Evaluation...")
+                        model.eval()
+                        results = []
+                        random_id = 0  # np.random.randint(0, 1e4)
+                        quants = {}
+                        for i_eval, batch_eval in enumerate(tqdm(test_loader, desc='Generating Dance Poses')):
+                            # Prepare data
+                            # pose_seq_eval = map(lambda x: x.to(self.device), batch_eval)
+                            pose_seq_eval = batch_eval.to(self.device)
+                            src_pos_eval = pose_seq_eval[:, :] #
+                            global_shift = src_pos_eval[:, :, :3].clone()
+                            if config.rotmat:
+                                # trans = pose_seq[:, :, :3]
+                                src_pos_eval = src_pos_eval[:, :, 3:]
+                            elif config.global_vel:
+                                src_pos_eval[:, :-1, :3] = src_pos_eval[:, 1:, :3] - src_pos_eval[:, :-1, :3]
+                                src_pos_eval[:, -1, :3] = src_pos_eval[:, -2, :3]
                             else:
-                                quants[self.dance_names[i_eval]] = model.module.encode(src_pos_eval)[0].cpu().data.numpy()[0]
-                        else:
-                            quants = None
-                    visualizeAndWrite(results, config,self.visdir, self.dance_names, epoch_i, quants)
+                                src_pos_eval[:, :, :3] = 0
+
+                            pose_seq_out, loss, _ = model(src_pos_eval)  # first 20 secs
+
+                            if config.rotmat:
+                                pose_seq_out = torch.cat([global_shift, pose_seq_out], dim=2)
+                            if config.global_vel:
+                                global_vel = pose_seq_out[:, :, :3].clone()
+                                pose_seq_out[:, 0, :3] = 0
+                                for iii in range(1, pose_seq_out.size(1)):
+                                    pose_seq_out[:, iii, :3] = pose_seq_out[:, iii-1, :3] + global_vel[:, iii-1, :]
+                                # print('Use vel!')
+                                # print(pose_seq_out[:, :, :3])
+                            else:
+                                pose_seq_out[:, :, :3] = global_shift
+                            results.append(pose_seq_out)
+                            if config.structure.use_bottleneck:
+                                quants_pred = model.module.encode(src_pos_eval)
+                                if isinstance(quants_pred, tuple):
+                                    quants[self.dance_names[i_eval]] = tuple(quants_pred[ii][0].cpu().data.numpy()[0] for ii in range(len(quants_pred)))
+                                else:
+                                    quants[self.dance_names[i_eval]] = model.module.encode(src_pos_eval)[0].cpu().data.numpy()[0]
+                            else:
+                                quants = None
+                        visualizeAndWrite(results, config,self.visdir, self.dance_names, epoch_i, quants)
                 model.train()
             self.schedular.step()  
 

@@ -63,7 +63,10 @@ def get_closest_rotmat(rotmats):
         A numpy array of the same shape as the inputs.
     """
     u, s, vh = np.linalg.svd(rotmats)
+    print(u.shape)
+    print(vh.shape)
     r_closest = np.matmul(u, vh)
+
 
     # if the determinant of UV' is -1, we must flip the sign of the last column of u
     det = np.linalg.det(r_closest)  # (..., )
@@ -250,10 +253,10 @@ def write2json_original(dances, dance_names, config, expdir, epoch):
 
 def write2pkl(dances, dance_names, config, expdir, epoch, rotmat):
     epoch = int(epoch)
-    # print(len(dances))
-    # print(len(dance_names))
-    assert len(dances) == len(dance_names),\
-        "number of generated dance != number of dance_names"
+    print(len(dances))
+    print(len(dance_names))
+    # assert len(dances) == len(dance_names),\
+    #     "number of generated dance != number of dance_names"
     
     if not os.path.exists(os.path.join(expdir, "pkl")):
         os.makedirs(os.path.join(expdir, "pkl"))
@@ -266,13 +269,14 @@ def write2pkl(dances, dance_names, config, expdir, epoch, rotmat):
 
     # print("Writing Json...")
     for i in tqdm(range(len(dances)),desc='Generating Jsons'):
-
-        # if rotmat:
-        #     mat, trans = dances[i]
-        #     pkl_data = {"pred_motion": mat, "pred_trans": trans}
+        
+        if rotmat:
+            mat, trans = dances
+            pkl_data = {"smpl_poses": mat, "smpl_trans": trans}
         # else:
-        np_dance = dances[i]
-        pkl_data = {"pred_position": np_dance}
+        
+            # np_dance = dances[i]
+            # pkl_data = {"pred_position": np_dance}
 
         dance_path = os.path.join(ep_path, dance_names[i] + '.pkl')
         # if not os.path.exists(dance_path):
@@ -280,6 +284,7 @@ def write2pkl(dances, dance_names, config, expdir, epoch, rotmat):
 
         # with open(dance_path, 'w') as f:
         np.save(dance_path, pkl_data)
+        print("done")
 
 
 def pose_code2pkl(pcodes, dance_names, config, expdir, epoch):
@@ -385,7 +390,7 @@ def write2json(dances, dance_names, config, expdir, epoch):
 
 def visualizeAndWrite(results,config,expdir,dance_names, epoch, quants=None):
     if config.rotmat:
-        smpl = SMPL(model_path=config.smpl_dir, gender='MALE', batch_size=1)
+        smpl = SMPL(model_path="smpl", gender='MALE', batch_size=1)
     np_dances = []
     np_dances_original = []
     dance_datas = []
@@ -396,22 +401,23 @@ def visualizeAndWrite(results,config,expdir,dance_names, epoch, quants=None):
 
             if config.rotmat:
                 print('Use SMPL!')
+                pdb.set_trace()
                 root = np_dance[:, :3]
                 rotmat = np_dance[:, 3:].reshape([-1, 3, 3])
 
 
-                # write2pkl((rotmat, root), dance_names[i], config.testing, expdir, epoch, rotmat=True)
+                write2pkl((rotmat, root), dance_names[i], config.testing, expdir, epoch, rotmat=True)
 
-                rotmat = get_closest_rotmat(rotmat)
-                smpl_poses = rotmat2aa(rotmat).reshape(-1, 24, 3)
-                np_dance = smpl.forward(
-                    global_orient=torch.from_numpy(smpl_poses[:, 0:1]).float(),
-                    body_pose=torch.from_numpy(smpl_poses[:, 1:]).float(),
-                    transl=torch.from_numpy(root).float(),
-                ).joints.detach().numpy()[:, 0:24, :]
-                b = np_dance.shape[0]
-                np_dance = np_dance.reshape(b, -1)
-                dance_datas.append(np_dance)
+                # rotmat = get_closest_rotmat(rotmat)
+                # smpl_poses = rotmat2aa(rotmat).reshape(-1, 24, 3) #was 24
+                # np_dance = smpl.forward(
+                #     global_orient=torch.from_numpy(smpl_poses[:, 0:1]).float(),
+                #     body_pose=torch.from_numpy(smpl_poses[:, 1:]).float(),
+                #     transl=torch.from_numpy(root).float(),
+                # ).joints.detach().numpy()[:, 0:24, :]
+                # b = np_dance.shape[0]
+                # np_dance = np_dance.reshape(b, -1)
+                # dance_datas.append(np_dance)
             # print(np_dance.shape)
             else:
                 # if args.use_mean_pose:
@@ -572,7 +578,7 @@ def load_data_aist(data_dir, interval=120, move=40, rotmat=False, external_wav=N
                         print(wav_path)
                     np_music = np.array(sample_dict_wav['music_array']).astype(np.float32)
                     
-            
+
             np_dance = np.array(sample_dict['dance_array'])
 
             if not rotmat:
